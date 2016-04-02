@@ -52,12 +52,18 @@ for a description of the algorithm.
 .SS -d, --number-digits NUMBER
 Specifies the number of digits shown in the image. Default value is
 .IR 6 .
+Use
+.I -1
+to automatically detect the number of digits.
 .SS -r, --one-ratio RATIO
 Set the height/width ratio threshold to recognize a digit as a one.
 RATIO takes integers only.
 See the web page of
 .BR ssocr (1)
 for a description of the algorithm.
+.SS -m, --minus-ratio RATIO
+Set the width/height ratio to recognize a minus sign.
+This uses the same idea as recognizing the digit one.
 .SS -o, --output-image FILE
 Write the processed image to FILE.
 Use
@@ -200,8 +206,8 @@ the (local) thresholding value.
 .SS rgb_threshold
 Convert the image to monochrome using simple thresholding for every color
 channel.
-If any of the red, green or blue values is below the threshold, the pixel is
-set to black.
+This is the same as
+.B --luminance=minimum make_mono.
 You should use
 .B --luminance=minimum
 and
@@ -212,6 +218,8 @@ instead.
 .SS r_threshold
 Convert the image to monochrome using simple thresholding.
 Only the red color channel is used.
+This is the same as
+.B --luminance=red make_mono.
 You should use
 .B --luminance red
 and
@@ -222,6 +230,8 @@ instead.
 .SS g_threshold
 Convert the image to monochrome using simple thresholding.
 Only the green color channel is used.
+This is the same as
+.B --luminance=green make_mono.
 You should use
 .B --luminance green
 and
@@ -232,6 +242,8 @@ instead.
 .SS b_threshold
 Convert the image to monochrome using simple thresholding.
 Only the blue color channel is used.
+This is the same as
+.B --luminance=blue make_mono.
 You should use
 .B --luminance blue
 and
@@ -267,6 +279,8 @@ Image dimensions do not change,
 pixels rotated out of the image area are dropped,
 pixels from outside the image rotated into the new image are set to the
 background color.
+.SS mirror { horiz | vert }
+Mirror the image horizontally or vertically.
 .SS crop X Y W H
 Use only the subpicture with upper left corner (
 .BR X , Y

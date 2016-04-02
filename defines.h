@@ -14,13 +14,14 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/* Copyright (C) 2004-2010,2012 Erik Auerswald <auerswal@unix-ag.uni-kl.de> */
+/* Copyright (C) 2004-2015 Erik Auerswald <auerswal@unix-ag.uni-kl.de> */
+/* Copyright (C) 2013 Cristiano Fontana <fontanacl@ornl.gov> */
 
 #ifndef SSOCR2_DEFINES_H
 #define SSOCR2_DEFINES_H
 
 /* version number */
-#define VERSION "2.9.7"
+#define VERSION "2.16.3"
 
 /* states */
 #define FIND_DARK 0
@@ -49,6 +50,8 @@
 #define VERT_RIGHT_DOWN 32
 #define HORIZ_DOWN 64
 #define ALL_SEGS 127
+#define DECIMAL 128
+#define MINUS 256
 
 /* digits */
 #define D_ZERO (ALL_SEGS & ~HORIZ_MID)
@@ -59,15 +62,34 @@
 #define D_FIVE (ALL_SEGS & ~(VERT_RIGHT_UP | VERT_LEFT_DOWN))
 #define D_SIX (ALL_SEGS & ~VERT_RIGHT_UP)
 #define D_SEVEN (HORIZ_UP | VERT_RIGHT_UP | VERT_RIGHT_DOWN)
-#define D_ALTSEVEN (VERT_LEFT_UP | HORIZ_UP | VERT_RIGHT_UP | VERT_RIGHT_DOWN)
+#define D_ALTSEVEN (VERT_LEFT_UP | D_SEVEN)
 #define D_EIGHT ALL_SEGS
 #define D_NINE (ALL_SEGS & ~VERT_LEFT_DOWN)
+#define D_ALTNINE (ALL_SEGS & ~(VERT_LEFT_DOWN | HORIZ_DOWN))
+#define D_DECIMAL DECIMAL
+#define D_MINUS MINUS
+#define D_HEX_A (ALL_SEGS & ~HORIZ_DOWN)
+#define D_HEX_b (ALL_SEGS & ~(HORIZ_UP | VERT_RIGHT_UP))
+#define D_HEX_C (ALL_SEGS & ~(VERT_RIGHT_UP | HORIZ_MID | VERT_RIGHT_DOWN))
+#define D_HEX_c (HORIZ_MID | VERT_LEFT_DOWN | HORIZ_DOWN)
+#define D_HEX_d (ALL_SEGS & ~(HORIZ_UP | VERT_LEFT_UP))
+#define D_HEX_E (ALL_SEGS & ~(VERT_RIGHT_UP | VERT_RIGHT_DOWN))
+#define D_HEX_F (ALL_SEGS & ~(VERT_RIGHT_UP | VERT_RIGHT_DOWN | HORIZ_DOWN))
 #define D_UNKNOWN 0
 
 #define NUMBER_OF_DIGITS 6 /* in this special case */
 
+/* a decimal point (or thousands separator) is recognized by height less
+ * than <maximum digit height> / DEC_H_RATIO and width less than
+ * <maximum digit width> / DEC_W_RATIO */
+#define DEC_H_RATIO 7
+#define DEC_W_RATIO 2 /* needs to work with just ones in the display, too */
+
 /* a one is recognized by a height/width ratio > ONE_RATIO (as ints) */
-#define ONE_RATIO 2
+#define ONE_RATIO 3
+
+/* a minus sign is recognized by a width/height ratio > MINUS_RATIO (as ints) */
+#define MINUS_RATIO 2
 
 /* to find segment need # of pixels */
 #define NEED_PIXELS 1
@@ -103,14 +125,6 @@
 /* default luminance formula */
 #define DEFAULT_LUM_FORMULA REC709
 
-/* channels of RGB images */
-typedef enum channel_e {
-  CHAN_ALL,
-  CHAN_RED,
-  CHAN_GREEN,
-  CHAN_BLUE
-} channel_t;
-
 /* foreground and background */
 typedef enum fg_bg_e {
   FG,
@@ -128,5 +142,11 @@ typedef enum luminance_e {
   GREEN,
   BLUE
 } luminance_t;
+
+/* mirror horizontally or vertically */
+typedef enum mirror_e {
+  HORIZONTAL,
+  VERTICAL
+} mirror_t;
 
 #endif /* SSOCR2_DEFINES_H */

@@ -14,7 +14,8 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/* Copyright (C) 2004-2010,2012 Erik Auerswald <auerswal@unix-ag.uni-kl.de> */
+/* Copyright (C) 2004-2015 Erik Auerswald <auerswal@unix-ag.uni-kl.de> */
+/* Copyright (C) 2013 Cristiano Fontana <fontanacl@ornl.gov> */
 
 /* standard things */
 #include <stdio.h>          /* puts, printf, BUFSIZ, perror, FILE */
@@ -27,8 +28,8 @@
 #include "defines.h"        /* defines */
 
 /* global variables */
-static int ssocr_foreground = SSOCR_BLACK;
-static int ssocr_background = SSOCR_WHITE;
+extern int ssocr_foreground;
+extern int ssocr_background;
 
 /* functions */
 
@@ -66,7 +67,7 @@ void print_version(FILE *f)
 {
   fprintf(f, "Seven Segment Optical Character Recognition Version %s\n",
              VERSION);
-  fprintf(f, "Copyright (C) 2004-2010,2012 by Erik Auerswald"
+  fprintf(f, "Copyright (C) 2004-2015 by Erik Auerswald"
              " <auerswal@unix-ag.uni-kl.de>\n");
   fprintf(f, "This program comes with ABSOLUTELY NO WARRANTY\n");
   fprintf(f, "This is free software, and you are welcome to redistribute it"
@@ -88,8 +89,9 @@ void usage(char *name, FILE *f)
   fprintf(f, "         -n, --number-pixels=#    number of pixels needed to recognize a segment\n");
   fprintf(f, "         -i, --ignore-pixels=#    number of pixels ignored when searching digit\n");
   fprintf(f, "                                  boundaries\n");
-  fprintf(f, "         -d, --number-digits=#    number of digits in image\n");
+  fprintf(f, "         -d, --number-digits=#    number of digits in image (-1 for auto)\n");
   fprintf(f, "         -r, --one-ratio=#        height/width ratio to recognize a \'one\'\n");
+  fprintf(f, "         -m, --minus-ratio=#      width/height ratio to recognize a minus sign\n");
   fprintf(f, "         -o, --output-image=FILE  write processed image to FILE\n");
   fprintf(f, "         -O, --output-format=FMT  use output format FMT (Imlib2 formats)\n");
   fprintf(f, "         -p, --process-only       do image processing only, no OCR\n");
@@ -126,6 +128,7 @@ void usage(char *name, FILE *f)
   fprintf(f, "          shear OFFSET            shear image OFFSET pixels (at bottom) to the\n");
   fprintf(f, "                                  right\n");
   fprintf(f, "          rotate THETA            rotate image by THETA degrees\n");
+  fprintf(f, "          mirror {horiz|vert}     mirror image horizontally or vertically\n");
   fprintf(f, "          crop X Y W H            crop image with upper left corner (X,Y) with\n");
   fprintf(f, "                                  width W and height H\n");
   fprintf(f, "          set_pixels_filter MASK  set pixels that have at least MASK neighbor\n");
@@ -143,6 +146,7 @@ void usage(char *name, FILE *f)
   fprintf(f, "          luminance              = ");
   print_lum_key(DEFAULT_LUM_FORMULA, f); fprintf(f, "\n");
   fprintf(f, "          height/width threshold = %2d\n", ONE_RATIO);
+  fprintf(f, "          width/height threshold for minus sign = %2d\n", MINUS_RATIO);
   fprintf(f, "\nOperation: The IMAGE is read, the COMMANDs are processed in the sequence\n");
   fprintf(f, "           they are given, in the resulting image the given number of digits\n");
   fprintf(f, "           are searched and recognized, after which the recognized number is\n");

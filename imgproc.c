@@ -14,7 +14,7 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/* Copyright (C) 2004-2010,2012 Erik Auerswald <auerswal@unix-ag.uni-kl.de> */
+/* Copyright (C) 2004-2015 Erik Auerswald <auerswal@unix-ag.uni-kl.de> */
 
 /* ImLib2 Header */
 #include <X11/Xlib.h>       /* needed by Imlib2.h */
@@ -36,8 +36,8 @@
 #include "help.h"           /* online help */
 
 /* global variables */
-static int ssocr_foreground = SSOCR_BLACK;
-static int ssocr_background = SSOCR_WHITE;
+extern int ssocr_foreground;
+extern int ssocr_background;
 
 /* functions */
 
@@ -455,60 +455,6 @@ Imlib_Image make_mono(Imlib_Image *source_image, double thresh, luminance_t lt)
   return new_image;
 }
 
-/* set pixel to black (0,0,0) if R<T or G<T or R<T, T=thresh/100*255 */
-Imlib_Image rgb_threshold(Imlib_Image *source_image, double thresh,
-                          channel_t channel)
-{
-  Imlib_Image new_image; /* construct filtered image here */
-  Imlib_Image current_image; /* save image pointer */
-  int height, width; /* image dimensions */
-  int x,y; /* iteration variables */
-  Imlib_Color pixel; /* alpha, red, green, blue */
-  int T = (255 * thresh) / 100;
-  int set_pixel=0; /* decide if pixel shall be set, i.e. black (foreground) */
-
-  /* save pointer to current image */
-  current_image = imlib_context_get_image();
-
-  /* create new image */
-  imlib_context_set_image(*source_image);
-  height = imlib_image_get_height();
-  width = imlib_image_get_width();
-  new_image = imlib_clone_image();
-
-  /* check for every pixel if it should be set in filtered image */
-  for(x=0; x<width; x++) {
-    for(y=0; y<height; y++) {
-      imlib_image_query_pixel(x, y, &pixel);
-      set_pixel=0;
-      switch(channel) {
-        case CHAN_ALL:
-          if((pixel.red<T) || (pixel.blue<T) || (pixel.green<T))
-            set_pixel=1;
-          break;
-        case CHAN_RED:   if(pixel.red<T) set_pixel=1; break;
-        case CHAN_GREEN: if(pixel.green<T) set_pixel=1; break;
-        case CHAN_BLUE:  if(pixel.blue<T) set_pixel=1; break;
-        default:
-          fprintf(stderr, "warning: rgb_threshold(): unknown channel %d\n",
-                  channel);
-          break;
-      }
-      if(set_pixel) {
-        draw_fg_pixel(new_image, x, y);
-      } else {
-        draw_bg_pixel(new_image, x, y);
-      }
-    }
-  }
-
-  /* restore image from before function call */
-  imlib_context_set_image(current_image);
-
-  /* return filtered image */
-  return new_image;
-}
-
 /* adapt threshold to image values values */
 double adapt_threshold(Imlib_Image *image, double thresh, luminance_t lt, int x,
                        int y, int w, int h, int flags)
@@ -567,7 +513,7 @@ double get_threshold(Imlib_Image *source_image, double fraction, luminance_t lt,
   /* find the threshold value to differentiate between dark and light */
   for(xi=0; (xi<w) && (xi<width); xi++) {
     for(yi=0; (yi<h) && (yi<height); yi++) {
-      imlib_image_query_pixel(xi, yi, &color);
+      imlib_image_query_pixel(x+xi, y+yi, &color);
       lum = get_lum(&color, lt);
       if(lum < minval) minval = lum;
       if(lum > maxval) maxval = lum;
@@ -808,7 +754,7 @@ Imlib_Image shear(Imlib_Image *source_image, int offset)
   for(y=1; y<height; y++) {
     shift = y * offset / (height-1);
     /* copy pixels */
-    for(x=width-1; x>0+shift; x--) {
+    for(x=width-1; x>=shift; x--) {
       imlib_image_query_pixel(x-shift, y, &color_return);
       imlib_context_set_image(new_image);
       imlib_context_set_color(color_return.red, color_return.green,
@@ -816,7 +762,7 @@ Imlib_Image shear(Imlib_Image *source_image, int offset)
       imlib_image_draw_pixel(x,y,0);
       imlib_context_set_image(*source_image);
     }
-    /* fill with white (background) */
+    /* fill with background */
     for(x=0; x<shift; x++) {
       draw_bg_pixel(new_image, x, y);
     }
@@ -867,6 +813,54 @@ Imlib_Image rotate(Imlib_Image *source_image, double theta)
       }
       imlib_image_draw_pixel(x,y,0);
       imlib_context_set_image(*source_image);
+    }
+  }
+
+  /* restore image from before function call */
+  imlib_context_set_image(current_image);
+
+  /* return filtered image */
+  return new_image;
+}
+
+/* mirror image horizontally or vertically */
+Imlib_Image mirror(Imlib_Image *source_image, mirror_t direction)
+{
+  Imlib_Image new_image; /* construct filtered image here */
+  Imlib_Image current_image; /* save image pointer */
+  int height, width; /* image dimensions */
+  int x,y; /* iteration variables / target coordinates */
+  Imlib_Color color_return; /* for imlib_query_pixel() */
+
+  /* save pointer to current image */
+  current_image = imlib_context_get_image();
+
+  /* create a new image */
+  imlib_context_set_image(*source_image);
+  height = imlib_image_get_height();
+  width = imlib_image_get_width();
+  new_image = imlib_clone_image();
+
+  /* create mirrored image */
+  if(direction == HORIZONTAL) {
+    for(x = width-1; x>=0; x--) {
+      for(y = 0; y < height; y++) {
+	imlib_image_query_pixel(width - 1 - x, y, &color_return);
+	imlib_context_set_image(new_image);
+	imlib_context_set_color(color_return.red, color_return.green, color_return.blue, color_return.alpha);
+	imlib_image_draw_pixel(x,y,0);
+	imlib_context_set_image(*source_image);
+      }
+    }
+  } else if(direction == VERTICAL) {
+    for(x = 0; x < width; x++) {
+      for(y = height-1; y >= 0; y--) {
+	imlib_image_query_pixel(x, height - 1 - y, &color_return);
+	imlib_context_set_image(new_image);
+	imlib_context_set_color(color_return.red, color_return.green, color_return.blue, color_return.alpha);
+	imlib_image_draw_pixel(x,y,0);
+	imlib_context_set_image(*source_image);
+      }
     }
   }
 
@@ -1071,6 +1065,7 @@ void save_image(const char *image_type, Imlib_Image *image, const char *fmt,
 {
   const char *tmp;
   Imlib_Image *current_image;
+  Imlib_Load_Error save_error=0;
   const char *const stdout_file = "/proc/self/fd/1";
 
   current_image = imlib_context_get_image();
@@ -1089,7 +1084,7 @@ void save_image(const char *image_type, Imlib_Image *image, const char *fmt,
   }
   if(tmp) {
     if(flags & VERBOSE)
-      fprintf(stderr, "using %s format for %s image\n", image_type, tmp);
+      fprintf(stderr, "using %s format for %s image\n", tmp, image_type);
     imlib_image_set_format(tmp);
   } else { /* use png as default */
     if(flags & VERBOSE)
@@ -1099,7 +1094,11 @@ void save_image(const char *image_type, Imlib_Image *image, const char *fmt,
   /* write image to disk */
   if(flags & VERBOSE)
     fprintf(stderr, "writing %s image to file %s\n", image_type, filename);
-  imlib_save_image(filename);
+  imlib_save_image_with_error_return(filename, &save_error);
+  if(save_error && save_error != IMLIB_LOAD_ERROR_NONE) {
+    fprintf(stderr, "error saving image file %s\n", filename);
+    report_imlib_error(save_error);
+  }
   imlib_context_set_image(current_image);
 }
 
@@ -1127,5 +1126,61 @@ luminance_t parse_lum(char *keyword)
     return BLUE;
   } else {
     return DEFAULT_LUM_FORMULA;
+  }
+}
+
+/* report Imlib2 load/save error to stderr */
+void report_imlib_error(Imlib_Load_Error error)
+{
+  fputs("  Imlib2 error code: ",stderr);
+  switch (error) {
+    case IMLIB_LOAD_ERROR_NONE:
+      fputs("IMLIB_LOAD_ERROR_NONE\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST:
+      fputs("IMLIB_LOAD_ERROR_FILE_DOES_NOT_EXIST\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_FILE_IS_DIRECTORY:
+      fputs("IMLIB_LOAD_ERROR_FILE_IS_DIRECTORY\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_READ:
+      fputs("IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_READ\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_NO_LOADER_FOR_FILE_FORMAT:
+      fputs("IMLIB_LOAD_ERROR_NO_LOADER_FOR_FILE_FORMAT\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_PATH_TOO_LONG:
+      fputs("IMLIB_LOAD_ERROR_PATH_TOO_LONG\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_PATH_COMPONENT_NON_EXISTANT:
+      fputs("IMLIB_LOAD_ERROR_PATH_COMPONENT_NON_EXISTANT\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_PATH_COMPONENT_NOT_DIRECTORY:
+      fputs("IMLIB_LOAD_ERROR_PATH_COMPONENT_NOT_DIRECTORY\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_PATH_POINTS_OUTSIDE_ADDRESS_SPACE:
+      fputs("IMLIB_LOAD_ERROR_PATH_POINTS_OUTSIDE_ADDRESS_SPACE\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_TOO_MANY_SYMBOLIC_LINKS:
+      fputs("IMLIB_LOAD_ERROR_TOO_MANY_SYMBOLIC_LINKS\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_OUT_OF_MEMORY:
+      fputs("IMLIB_LOAD_ERROR_OUT_OF_MEMORY\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_OUT_OF_FILE_DESCRIPTORS:
+      fputs("IMLIB_LOAD_ERROR_OUT_OF_FILE_DESCRIPTORS\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_WRITE:
+      fputs("IMLIB_LOAD_ERROR_PERMISSION_DENIED_TO_WRITE\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_OUT_OF_DISK_SPACE:
+      fputs("IMLIB_LOAD_ERROR_OUT_OF_DISK_SPACE\n", stderr);
+      break;
+    case IMLIB_LOAD_ERROR_UNKNOWN:
+      fputs("IMLIB_LOAD_ERROR_UNKNOWN\n", stderr);
+      break;
+    default:
+      fprintf(stderr, "unknown error code %d, please report\n", error);
+      break;
   }
 }

@@ -14,7 +14,8 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/* Copyright (C) 2004-2010,2012 Erik Auerswald <auerswal@unix-ag.uni-kl.de> */
+/* Copyright (C) 2004-2015 Erik Auerswald <auerswal@unix-ag.uni-kl.de> */
+/* Copyright (C) 2013 Cristiano Fontana <fontanacl@ornl.gov> */
 
 /* ImLib2 Header */
 #include <X11/Xlib.h>       /* needed by Imlib2.h */
@@ -41,8 +42,8 @@
 #include "help.h"           /* online help */
 
 /* global variables */
-static int ssocr_foreground = SSOCR_BLACK;
-static int ssocr_background = SSOCR_WHITE;
+int ssocr_foreground = SSOCR_BLACK;
+int ssocr_background = SSOCR_WHITE;
 
 /* functions */
 
@@ -113,6 +114,7 @@ int main(int argc, char **argv)
   Imlib_Image image=NULL; /* an image handle */
   Imlib_Image new_image=NULL; /* a temporary image handle */
   Imlib_Image debug_image=NULL; /* DEBUG */
+  Imlib_Load_Error load_error=0; /* save Imlib2 error code on image I/O*/
   char *imgfile=NULL; /* filename of image file */
   int use_tmpfile=0; /* flag to know if temporary image file is used */
 
@@ -122,10 +124,11 @@ int main(int argc, char **argv)
   int number_of_digits = NUMBER_OF_DIGITS; /* look for this many digits */
   int ignore_pixels = IGNORE_PIXELS; /* pixels to ignore when checking column */
   int one_ratio = ONE_RATIO; /* height/width > one_ratio => digit 'one' */
+  int minus_ratio = MINUS_RATIO; /* height/width > minus_ratio => char 'minus' */
   double thresh=THRESHOLD;  /* border between light and dark */
   int offset;  /* offset for shear */
   double theta; /* rotation angle */
-  char *output_file=NULL; /* wrie processed image to file */
+  char *output_file=NULL; /* write processed image to file */
   char *output_fmt=NULL; /* use this format */
   char *debug_image_file=NULL; /* ...to this file */
   int flags=0; /* set by options, see #defines on .h file */
@@ -135,6 +138,8 @@ int main(int argc, char **argv)
   int col=UNKNOWN;  /* is column dark or light? */
   int row=UNKNOWN;  /* is row dark or light? */
   int dig_w;  /* width of digit part of image */
+  int dig_h;  /* height of digit part of image */
+  int max_dig_h=0, max_dig_w=0; /* maximum height & width of digits found */
   Imlib_Color color; /* Imlib2 RGBA color structure */
   /* state of search */
   int state = (ssocr_foreground == SSOCR_BLACK) ? FIND_DARK : FIND_LIGHT;
@@ -161,7 +166,8 @@ int main(int argc, char **argv)
       {"number-pixels", 1, 0, 'n'}, /* pixels needed to regard segment as set */
       {"ignore-pixels", 1, 0, 'i'}, /* pixels ignored when searching digits */
       {"number-digits", 1, 0, 'd'}, /* number of digits in image */
-      {"one-ratio", 1, 0, 'r'}, /* wheight/width threshold to recognize a one */
+      {"one-ratio", 1, 0, 'r'}, /* height/width threshold to recognize a one */
+      {"minus-ratio", 1, 0, 'm'}, /* width/height threshold to recognize a minus sign */
       {"output-image", 1, 0, 'o'}, /* write processed image to given file */
       {"output-format", 1, 0, 'O'}, /* format of output image */
       {"debug-image", 2, 0, 'D'}, /* write a debug image */
@@ -174,7 +180,7 @@ int main(int argc, char **argv)
       {"luminance", 1, 0, 'l'}, /* luminance formula */
       {0, 0, 0, 0} /* terminate long options */
     };
-    c = getopt_long (argc, argv, "hVt:vaTn:i:d:r:o:O:D::pPf:b:Igl:",
+    c = getopt_long (argc, argv, "hVt:vaTn:i:d:r:m:o:O:D::pPf:b:Igl:",
                      long_options, &option_index);
     if (c == -1) break; /* leaves while (1) loop */
     switch (c) {
@@ -234,7 +240,7 @@ int main(int argc, char **argv)
       case 'd':
         if(optarg) {
           number_of_digits = atoi(optarg);
-          if(number_of_digits < 0) {
+          if((number_of_digits < 1) && (number_of_digits != -1)) {
             fprintf(stderr, "warning: ignoring --number-digits=%s\n", optarg);
             number_of_digits = NUMBER_OF_DIGITS;
           }
@@ -246,6 +252,15 @@ int main(int argc, char **argv)
           if(one_ratio < 2) {
             fprintf(stderr, "warning: ignoring --one-ratio=%s\n", optarg);
             one_ratio = ONE_RATIO;
+          }
+        }
+        break;
+      case 'm':
+        if(optarg) {
+          minus_ratio = atoi(optarg);
+          if(minus_ratio < 1) {
+            fprintf(stderr, "warning: ignoring --minus-ratio=%s\n", optarg);
+            minus_ratio = MINUS_RATIO;
           }
         }
         break;
@@ -352,7 +367,8 @@ int main(int argc, char **argv)
                     (ssocr_background == SSOCR_BLACK) ? "black" : "white");
     fprintf(stderr, "luminance  = ");
     print_lum_key(lt, stderr); fprintf(stderr, "\n");
-    fprintf(stderr, "height/width threshold = %d\n", one_ratio);
+    fprintf(stderr, "height/width threshold for one   = %d\n", one_ratio);
+    fprintf(stderr, "width/height threshold for minus = %d\n", minus_ratio);
     fprintf(stderr, "optind=%d argc=%d\n", optind, argc);
     fprintf(stderr, "================================================================================\n");
   }
@@ -378,7 +394,7 @@ int main(int argc, char **argv)
   if(flags & VERBOSE) {
     fprintf(stderr, "loading image %s\n", imgfile);
   }
-  image = imlib_load_image_immediately_without_cache(imgfile);
+  image = imlib_load_image_with_error_return(imgfile, &load_error);
   if(use_tmpfile) {
     if(flags & VERBOSE)
       fprintf(stderr, "removing temporary image file %s\n", imgfile);
@@ -388,18 +404,8 @@ int main(int argc, char **argv)
   }
   if(!image) {
     fprintf(stderr, "could not load image %s\n", imgfile);
+    report_imlib_error(load_error);
     exit(99);
-  }
-
-  if(!(digits = calloc(number_of_digits, sizeof(digit_struct)))) {
-    perror("digits = calloc()");
-    exit(99);
-  }
-
-  /* initialize some vars */
-  for(i=0; i<number_of_digits; i++) {
-    digits[i].x1 = digits[i].x2 = digits[i].y1 = digits[i].y2 = 0;
-    digits[i].digit=D_UNKNOWN;
   }
 
   /* set the image we loaded as the current context image to work on */
@@ -604,25 +610,25 @@ int main(int argc, char **argv)
         }
       } else if(strcasecmp("rgb_threshold",argv[i]) == 0) {
         if(flags & VERBOSE) fputs(" processing rgb_threshold\n", stderr);
-        new_image = rgb_threshold(&image, thresh, CHAN_ALL);
+        new_image = make_mono(&image, thresh, MINIMUM);
         imlib_context_set_image(image);
         imlib_free_image();
         image = new_image;
       } else if(strcasecmp("r_threshold",argv[i]) == 0) {
         if(flags & VERBOSE) fputs(" processing r_threshold\n", stderr);
-        new_image = rgb_threshold(&image, thresh, CHAN_RED);
+        new_image = make_mono(&image, thresh, RED);
         imlib_context_set_image(image);
         imlib_free_image();
         image = new_image;
       } else if(strcasecmp("g_threshold",argv[i]) == 0) {
         if(flags & VERBOSE) fputs(" processing g_threshold\n", stderr);
-        new_image = rgb_threshold(&image, thresh, CHAN_GREEN);
+        new_image = make_mono(&image, thresh, GREEN);
         imlib_context_set_image(image);
         imlib_free_image();
         image = new_image;
       } else if(strcasecmp("b_threshold",argv[i]) == 0) {
         if(flags & VERBOSE) fputs(" processing b_threshold\n", stderr);
-        new_image = rgb_threshold(&image, thresh, CHAN_BLUE);
+        new_image = make_mono(&image, thresh, BLUE);
         imlib_context_set_image(image);
         imlib_free_image();
         image = new_image;
@@ -719,14 +725,14 @@ int main(int argc, char **argv)
           exit(99);
         }
       } else if(strcasecmp("rotate",argv[i]) == 0) {
-        if(flags & VERBOSE) {
-          fprintf(stderr, " processing rotate %f", atof(argv[i+1]));
-          if(flags & DEBUG_OUTPUT) {
-            fprintf(stderr, " (from string %s)", argv[i+1]);
-          }
-          fprintf(stderr, "\n");
-        }
         if(i+1<argc-1) {
+          if(flags & VERBOSE) {
+            fprintf(stderr, " processing rotate %f", atof(argv[i+1]));
+            if(flags & DEBUG_OUTPUT) {
+              fprintf(stderr, " (from string %s)", argv[i+1]);
+            }
+            fprintf(stderr, "\n");
+          }
           theta = atof(argv[++i]); /* sideeffect: increment i */
           new_image = rotate(&image, theta);
           imlib_context_set_image(image);
@@ -734,6 +740,29 @@ int main(int argc, char **argv)
           image = new_image;
         } else {
           fprintf(stderr, "error: rotate command needs an argument\n");
+          exit(99);
+        }
+      } else if(strcasecmp("mirror",argv[i]) == 0) {
+        if(i+1<argc-1) {
+          if(flags & VERBOSE) {
+            fprintf(stderr, " processing mirror %s\n", argv[i+1]);
+          }
+          if(strncasecmp("horiz",argv[i+1],5) == 0) {
+            new_image = mirror(&image, HORIZONTAL);
+          } else if(strncasecmp("vert",argv[i+1],4) == 0) {
+            new_image = mirror(&image, VERTICAL);
+          } else {
+            fprintf(stderr,
+                    "error: argument to 'mirror' must be 'horiz' or 'vert'\n");
+            exit(99);
+          }
+	  i++;
+          imlib_context_set_image(image);
+          imlib_free_image();
+          image = new_image;
+        } else {
+          fprintf(stderr,
+                  "error: mirror command needs argument 'horiz' or 'vert'\n");
           exit(99);
         }
       } else {
@@ -756,6 +785,19 @@ int main(int argc, char **argv)
   if(flags & USE_DEBUG_IMAGE) {
     /* copy processed image to debug image */
     debug_image = imlib_clone_image();
+  }
+
+  /* allocate memory for seven segment digits */
+  if(number_of_digits > -1) {
+    if(!(digits = calloc(number_of_digits, sizeof(digit_struct)))) {
+      perror("digits = calloc()");
+      exit(99);
+    }
+  } else {
+    if(!(digits = calloc(1, sizeof(digit_struct)))) {
+      perror("digits = calloc()");
+      exit(99);
+    }
   }
 
   /* horizontal partition */
@@ -782,7 +824,7 @@ int main(int argc, char **argv)
     if((state == ((ssocr_foreground == SSOCR_BLACK) ? FIND_DARK : FIND_LIGHT))
         && (col == ((ssocr_foreground == SSOCR_BLACK) ? DARK : LIGHT))) {
       /* beginning of digit */
-      if(d>=number_of_digits) {
+      if((number_of_digits > -1) && (d >= number_of_digits)) {
         fprintf(stderr, "found too many digits (%d)\n", d+1);
         imlib_free_image_and_decache();
         if(flags & USE_DEBUG_IMAGE) {
@@ -814,6 +856,13 @@ int main(int argc, char **argv)
         imlib_image_draw_line(i,0,i,h-1,0);
         imlib_context_set_image(image);
       }
+      /* if number of digits is not known, add memory for another digit */
+      if(!(digits = realloc(digits, (d+1) * sizeof(digit_struct)))) {
+        perror("digits = realloc()");
+        exit(99);
+      }
+      /* initialize additional memory */
+      memset(&digits[d], 0, sizeof(digit_struct));
       state = (ssocr_foreground == SSOCR_BLACK) ? FIND_DARK : FIND_LIGHT;
     }
   }
@@ -828,7 +877,7 @@ int main(int argc, char **argv)
     d++;
     state = (ssocr_foreground == SSOCR_BLACK) ? FIND_DARK : FIND_LIGHT;
   }
-  if(d != number_of_digits) {
+  if((number_of_digits > -1) && (d != number_of_digits)) {
     fprintf(stderr, "found only %d of %d digits\n", d, number_of_digits);
     imlib_free_image_and_decache();
     if(flags & USE_DEBUG_IMAGE) {
@@ -837,8 +886,14 @@ int main(int argc, char **argv)
       imlib_free_image_and_decache();
     }
     exit(1);
+  } else if(number_of_digits == -1) {
+    number_of_digits = d;
+    if(flags & DEBUG_OUTPUT) {
+      fprintf(stderr, "auto detecting number of digits: %d\n", d);
+    }
   }
   dig_w = digits[number_of_digits-1].x2 - digits[0].x1;
+  dig_h = digits[number_of_digits-1].y2 - digits[0].y1;
 
   /* find upper and lower boundaries of every digit */
   for(d=0; d<number_of_digits; d++) {
@@ -926,33 +981,119 @@ int main(int argc, char **argv)
     }
     imlib_context_set_image(image);
   }
+
+  /* determine maximum digit dimensions */
+  for(d=0; d<number_of_digits; d++) {
+    if(max_dig_w < digits[d].x2 - digits[d].x1)
+      max_dig_w = digits[d].x2 - digits[d].x1;
+    if(max_dig_h < digits[d].y2 - digits[d].y1)
+      max_dig_h = digits[d].y2 - digits[d].y1;
+  }
+  if(flags & DEBUG_OUTPUT)
+    fprintf(stderr, "digits are at most %d pixels wide and %d pixels high\n",
+                    max_dig_w, max_dig_h);
+
   /* debug: write digit info to stderr */
   if(flags & DEBUG_OUTPUT) {
     fprintf(stderr, "found %d digits\n", d);
     for(d=0; d<number_of_digits; d++) {
       fprintf(stderr, "digit %d: (%d,%d) -> (%d,%d), width: %d (%5.2f%%) "
-                      "height/width (int): %d\n", d,
+                      "height: %d (%5.2f%%)\n",
+                      d,
                       digits[d].x1, digits[d].y1, digits[d].x2, digits[d].y2,
                       digits[d].x2 - digits[d].x1,
                       ((digits[d].x2 - digits[d].x1) * 100.0) / dig_w,
-                      (digits[d].y2-digits[d].y1)/(digits[d].x2-digits[d].x1)
+                      digits[d].y2 - digits[d].y1,
+                      ((digits[d].y2 - digits[d].y1) * 100.0) / dig_h
              );
+      fprintf(stderr, "  height/width (int): ");
+      if(digits[d].x1 == digits[d].x2) {
+        fprintf(stderr, "NaN, max_dig_w/width (int): NaN, ");
+      } else {
+        fprintf(stderr, "%d, max_dig_w/width (int): %d, ",
+                       (digits[d].y2-digits[d].y1)/(digits[d].x2-digits[d].x1),
+                       max_dig_w / (digits[d].x2 - digits[d].x1)
+              );
+      }
+      fprintf(stderr, "max_dig_h/height (int): ");
+      if(digits[d].y1 == digits[d].y2) {
+        fprintf(stderr, "NaN\n");
+      } else {
+        fprintf(stderr, "%d\n",
+                        max_dig_h / (digits[d].y2 - digits[d].y1)
+               );
+      }
     }
   }
 
   /* at this point the digit 1 can be identified, because it is smaller than
    * the other digits */
-  for(i=0; i<number_of_digits; i++) {
+  if(flags & DEBUG_OUTPUT)
+    fputs("looking for digit 1\n",stderr);
+  for(d=0; d<number_of_digits; d++) {
+    /* skip digits with zero width */
+    if(digits[d].x1 == digits[d].x2) {
+      if(flags & DEBUG_OUTPUT)
+        fprintf(stderr, " skipping digit %d with zero width\n", d);
+      continue;
+    }
     /* if width of digit is less than 1/one_ratio of its height it is a 1
      * (the default 1/3 is arbitarily chosen -- normally seven segment
      * displays use digits that are 2 times as high as wide) */
-    if((digits[i].y2-digits[i].y1)/(digits[i].x2-digits[i].x1) > one_ratio) {
+    if((digits[d].y2-digits[d].y1+0.5)/(digits[d].x2-digits[d].x1) > one_ratio) {
       if(flags & DEBUG_OUTPUT) {
-        fprintf(stderr, "digit %d is a 1 (height/width = %d/%d = (int) %d)\n",
-               i, digits[i].y2 - digits[i].y1, digits[i].x2 - digits[i].x1,
-               (digits[i].y2 - digits[i].y1) / (digits[i].x2 - digits[i].x1));
+        fprintf(stderr, " digit %d is a 1 (height/width = %d/%d = (int) %d)\n",
+               d, digits[d].y2 - digits[d].y1, digits[d].x2 - digits[d].x1,
+               (digits[d].y2 - digits[d].y1) / (digits[d].x2 - digits[d].x1));
       }
-      digits[i].digit = D_ONE;
+      digits[d].digit = D_ONE;
+    }
+  }
+
+  /* identify a decimal point (or thousands separator) by relative size */
+  if(flags & DEBUG_OUTPUT)
+    fputs("looking for decimal points\n",stderr);
+  for(d=0; d<number_of_digits; d++) {
+    /* skip digits with zero width or height */
+    if((digits[d].x1 == digits[d].x2) || (digits[d].y1 == digits[d].y2)) {
+      if(flags & DEBUG_OUTPUT)
+        fprintf(stderr, " skipping digit %d with zero width or height\n", d);
+      continue;
+    }
+    /* if height of a digit is less than 1/5 of the maximum digit height,
+     * and its width is less than 1/2 of the maximum digit width (the widest
+     * digit might be a one), assume it is a decimal point */
+    if((digits[d].digit == D_UNKNOWN) &&
+       (max_dig_h / (digits[d].y2 - digits[d].y1) > 5) &&
+       (max_dig_w / (digits[d].x2 - digits[d].x1) > 2)) {
+      digits[d].digit = D_DECIMAL;
+      if(flags & DEBUG_OUTPUT)
+        fprintf(stderr, " digit %d is a decimal point\n", d);
+    }
+  }
+
+  /* identify a minus sign */
+  if(flags & DEBUG_OUTPUT)
+    fputs("looking for minus signs\n",stderr);
+  for(d=0; d<number_of_digits; d++) {
+    /* skip digits with zero height */
+    if(digits[d].y1 == digits[d].y2) {
+      if(flags & DEBUG_OUTPUT)
+        fprintf(stderr, " skipping digit %d with zero height\n", d);
+      continue;
+    }
+    /* if height of digit is less than 1/minus_ratio of its height it is a 1
+     * (the default 1/3 is arbitarily chosen -- normally seven segment
+     * displays use digits that are 2 times as high as wide) */
+    if((digits[d].digit == D_UNKNOWN) &&
+       ((digits[d].x2-digits[d].x1)/(digits[d].y2-digits[d].y1)>=minus_ratio)) {
+      if(flags & DEBUG_OUTPUT) {
+        fprintf(stderr,
+               " digit %d is a minus (width/height = %d/%d = (int) %d)\n",
+               d, digits[d].x2 - digits[d].x1, digits[d].y2 - digits[d].y1,
+               (digits[d].x2 - digits[d].x1) / (digits[d].y2 - digits[d].y1));
+      }
+      digits[d].digit = D_MINUS;
     }
   }
 
@@ -1075,6 +1216,42 @@ int main(int argc, char **argv)
     }
   }
 
+  /* print found segments as ASCII art if debug output is enabled
+   * example digits known by ssocr:
+   *   _      _  _       _   _  _   _   _   _
+   *  | |  |  _| _| |_| |_  |_   | | | |_| |_|
+   *  |_|  | |_  _|   |  _| |_|  |   | |_|  _|
+  */
+  if(flags & DEBUG_OUTPUT) {
+    fputs("Display as seen by ssocr:\n", stderr);
+    /* top row */
+    for(i=0; i<number_of_digits; i++) {
+      fputc(' ', stderr);
+      fputc(' ', stderr);
+      digits[i].digit & HORIZ_UP ? fputc('_', stderr) : fputc(' ', stderr);
+      fputc(' ', stderr);
+    }
+    fputc('\n', stderr);
+    /* middle row */
+    for(i=0; i<number_of_digits; i++) {
+      fputc(' ', stderr);
+      digits[i].digit & VERT_LEFT_UP ? fputc('|', stderr) : fputc(' ', stderr);
+      digits[i].digit & HORIZ_MID ? fputc('_', stderr) :
+        digits[i].digit == D_MINUS ? fputc('_', stderr) : fputc(' ', stderr);
+      digits[i].digit & VERT_RIGHT_UP ? fputc('|', stderr) : fputc(' ', stderr);
+    }
+    fputc('\n', stderr);
+    /* bottom row */
+    for(i=0; i<number_of_digits; i++) {
+      fputc(' ', stderr);
+      digits[i].digit&VERT_LEFT_DOWN ? fputc('|', stderr) : fputc(' ', stderr);
+      digits[i].digit&HORIZ_DOWN ? fputc('_', stderr) : 
+        digits[i].digit == D_DECIMAL ? fputc('.', stderr) : fputc(' ', stderr);
+      digits[i].digit&VERT_RIGHT_DOWN ? fputc('|', stderr) : fputc(' ', stderr);
+    }
+    fputs("\n\n", stderr);
+  }
+
   /* print digits */
   for(i=0; i<number_of_digits; i++) {
     switch(digits[i].digit) {
@@ -1085,12 +1262,23 @@ int main(int argc, char **argv)
       case D_FOUR: putchar('4'); break;
       case D_FIVE: putchar('5'); break;
       case D_SIX: putchar('6'); break;
-      case D_SEVEN:
+      case D_SEVEN: /* fallthrough */
       case D_ALTSEVEN: putchar('7'); break;
       case D_EIGHT: putchar('8'); break;
-      case D_NINE: putchar('9'); break;
+      case D_NINE: /* fallthrough */
+      case D_ALTNINE: putchar('9'); break;
+      case D_DECIMAL: putchar('.'); break;
+      case D_MINUS: putchar('-'); break;
+      case D_HEX_A: putchar('a'); break;
+      case D_HEX_b: putchar('b'); break;
+      case D_HEX_C: /* fallthrough */
+      case D_HEX_c: putchar('c'); break;
+      case D_HEX_d: putchar('d'); break;
+      case D_HEX_E: putchar('e'); break;
+      case D_HEX_F: putchar('f'); break;
+      /* finding a digit with no set segments is not supposed to happen */
       case D_UNKNOWN: putchar(' '); unknown_digit++; break;
-      default: putchar('.'); unknown_digit++; break;
+      default: putchar('_'); unknown_digit++; break;
     }
   }
   putchar('\n');
