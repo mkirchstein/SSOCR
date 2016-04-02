@@ -1,10 +1,4 @@
-### WARNING: This repo is a totally unsupported WIP - not currently meant for public consumption
+mirrored from: https://www.unix-ag.uni-kl.de/~auerswal/ssocr/
+please check that address for any updated version
 
-## Requires imlib2:
-
-  $ brew install imlib2
-  
-## Test commands:
-
-```ssocr -t 40 -d 5 -n 20 -i 10 test_images/test1.jpg
-```ssocr -t 50 -d 3 -n 7 -i 1 test_images/test2.png
+Would happily transfer ownership to @auerswal.

@@ -14,7 +14,7 @@
  *  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-/* Copyright (C) 2004-2010,2012 Erik Auerswald <auerswal@unix-ag.uni-kl.de> */
+/* Copyright (C) 2004-2015 Erik Auerswald <auerswal@unix-ag.uni-kl.de> */
 
 #ifndef SSOCR2_IMGPROC_H
 #define SSOCR2_IMGPROC_H
@@ -85,10 +85,6 @@ Imlib_Image dynamic_threshold(Imlib_Image *source_image, double t,
 /* make black and white */
 Imlib_Image make_mono(Imlib_Image *source_image, double thresh, luminance_t lt);
 
-/* set pixel to black (0,0,0) if R<T or G<T or R<T, T=thresh/100*255 */
-Imlib_Image rgb_threshold(Imlib_Image *source_image, double thresh,
-                          channel_t channel);
-
 /* set pixel to black (0,0,0) if R<T, T=thresh/100*255 */
 Imlib_Image r_threshold(Imlib_Image *source_image, double thresh);
 
@@ -113,6 +109,9 @@ Imlib_Image shear(Imlib_Image *source_image, int offset);
 
 /* rotate the image */
 Imlib_Image rotate(Imlib_Image *source_image, double theta);
+
+/* mirror image horizontally or vertically */
+Imlib_Image mirror(Imlib_Image *source_image, mirror_t direction);
 
 /* turn image to grayscale */
 Imlib_Image grayscale(Imlib_Image *source_image, luminance_t lt);
@@ -174,5 +173,8 @@ int clip(int value, int min, int max);
 /* save image to file */
 void save_image(const char *image_type, Imlib_Image *image, const char *fmt,
                 const char *filename, int flags);
+
+/* report Imlib2 load/save error to stderr */
+void report_imlib_error(Imlib_Load_Error error);
 
 #endif /* SSOCR2_IMGPROC_H */
